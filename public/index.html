@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <base href="/" />
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" />
+        <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+        <script src="./bower_components/angular/angular.min.js"></script>
+        <script src="./bower_components/angular-ui-router/release/angular-ui-router.min.js"></script>
+        <script src="socket.io/socket.io.js"></script>
+    </head>
+    <body ng-app="main">
+        <script>
+            (function() {
+                angular.module('main', [
+                    'ui.router'
+                ]);
+                angular.module('main').factory('httpInterceptor', function() {
+                    return {
+                        request: function(config) {
+                            config.headers["authorization"] = "abcdefg1234567";
+
+                            return config;
+                        }
+                    }
+                });
+                angular.module('main').service('LocationService', function($http) {
+                    navigator.geolocation.watchPosition(function(loc) {
+                        $http.post('/api/locations', {
+                            Latitude: loc.coords.latitude,
+                            Longitude: loc.coords.longitude
+                        })
+                    }, function(err) {
+                        console.log("Error ", err);
+                    });
+                });
+                angular.module('main').directive('filePicker', function() {
+                    return {
+                        restrict: "A",
+                        require: "ngModel",
+                        link: function(scope, element, attrs, ngModel) {
+                            element.bind("change", function(e) {
+                                var files = e.target.files;
+
+                                ngModel.$setViewValue(files);
+                            });
+                        }
+                    }
+                });
+                angular.module('main').config(function($stateProvider, $urlRouterProvider, $httpProvider) {
+                    $urlRouterProvider.otherwise('/');
+
+                    $httpProvider.interceptors.push('httpInterceptor');
+
+                    $stateProvider
+                        .state('home', {
+                            url: '/',
+                            template: '<h1>Home!</h1><br/><a ui-sref="items">Items</a>'
+                        })
+                        .state('items', {
+                            url: '/items',
+                            template: `
+                                <div class="container">
+                                    <form class="form">
+                                        <div class="form-group">
+                                            <label class="control-label">Name</label>
+                                            <input type="text" class="form-control" placeholder="Item Name" ng-model="item.Name" />
+                                        </div>
+                                        <div class="form-group">
+                                            <img class="img img-responsive" src="{{item.ImagePreview}}" width="200" />
+                                            <input type="file" ng-model="item.Image" file-picker ng-change="onImageSelected()" />
+                                        </div>
+                                        <div class="form-group">
+                                            <button class="btn btn-primary" ng-click="submit($event)">Save</button>
+                                        </div>
+                                    </form>
+                                    <table class="table">
+                                        <tr ng-repeat="item in items">
+                                            <td>{{item.Name}}</td>
+                                            <td><button class="btn btn-danger" ng-click="deleteItem(item)">Delete</button></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            `,
+                            controller: function($scope, $http, LocationService) {
+                                $scope.item = {
+                                    ID: 0,
+                                    Name: "",
+                                    Image: "",
+                                    ImagePreview: ""
+                                }
+
+                                $scope.items = [];
+
+                                $http.get("/api/items").then(function(resp) {
+                                    if(resp.data.Error) {
+                                        console.log(resp.data.Result);
+                                        $scope.items = [];
+                                        return;
+                                    }
+                                    $scope.items = resp.data.Result;
+                                }, function(error) {
+                                    $scope.items = [];
+                                });
+
+                                $scope.onImageSelected = function() {
+                                    if($scope.item.Image.length > 0) {
+                                        $scope.item.ImagePreview = URL.createObjectURL($scope.item.Image[0]);
+                                    }
+                                }
+
+                                $scope.submit = function(event) {
+                                    event.preventDefault();
+
+                                    var formData = new FormData();
+                                    formData.append('itemImage', $scope.item.Image[0]);
+                                    formData.append('data', JSON.stringify($scope.item));
+
+                                    $http.post('/api/items', formData, {
+                                        transformRequest: angular.identity,
+                                        headers: {
+                                            'Content-Type': undefined
+                                        }
+                                    }).then(function(resp) {
+                                        if(resp.data.Error) {
+                                            console.log(resp.data.Result);
+                                            return;
+                                        }
+                                        $scope.items.push($scope.item);
+                                    }, function(error) {
+                                        console.log(error);
+                                    });
+                                }
+
+                                $scope.deleteItem = function(item) {
+                                    $http.delete("/api/items/" + item.ID).then(function(resp) {
+                                        if(resp.data.Error) {
+                                            console.log(resp.data.Result);
+                                            return;
+                                        }
+                                        $scope.items.splice($scope.items.indexOf(item), 1);
+                                    }, function(error) {
+                                        console.log("Error ", error);
+                                    });
+                                }
+                            }
+                        })
+                });
+            })();
+            $(function() {
+                var socketIO = io.connect();
+                socketIO.on('message', function(data) {
+                    console.log("Socket Message ", data);
+
+                    switch(data.command) {
+                        case 'getInfo':
+                            socketIO.emit('message', {
+                                command: 'info',
+                                params: {
+                                    id: 1,
+                                    name: 'Firas Barakat'
+                                }
+                            })
+                            break;
+                    }
+                });
+            });
+        </script>
+        <ui-view></ui-view>
+    </body>
+</html>
